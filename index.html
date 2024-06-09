@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Interactive Computational Models Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+      .node {
+        cursor: pointer;
+      }
+      .link {
+        stroke: #999;
+        stroke-opacity: 0.6;
+      }
+      .label {
+        font: 15px sans-serif;
+        pointer-events: none;
+      }
+      button {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+      }
+      .central {
+        fill: #2a9d8f;
+      }
+      .domain {
+        fill: #e56342;
+      }
+      .model {
+        fill: #fb9f4e;
+      }
+      @keyframes shake {
+        0% {
+          transform: translate(1px, 1px) rotate(0deg);
+        }
+        10% {
+          transform: translate(-1px, -2px) rotate(-1deg);
+        }
+        20% {
+          transform: translate(-3px, 0px) rotate(1deg);
+        }
+        30% {
+          transform: translate(3px, 2px) rotate(0deg);
+        }
+        40% {
+          transform: translate(1px, -1px) rotate(1deg);
+        }
+        50% {
+          transform: translate(-1px, 2px) rotate(-1deg);
+        }
+        60% {
+          transform: translate(-3px, 1px) rotate(0deg);
+        }
+        70% {
+          transform: translate(3px, 1px) rotate(-1deg);
+        }
+        80% {
+          transform: translate(-1px, -1px) rotate(1deg);
+        }
+        90% {
+          transform: translate(1px, 2px) rotate(0deg);
+        }
+        100% {
+          transform: translate(1px, -2px) rotate(-1deg);
+        }
+      }
+
+      @keyframes grow {
+        0% {
+          font-size: 20px;
+        }
+        50% {
+          font-size: 30px;
+        }
+        100% {
+          font-size: 20px;
+        }
+      }
+
+      .highlight {
+        font: bold 20px sans-serif;
+        fill: #d62728; 
+        animation: shake 0.5s infinite, grow 1s infinite; /* Combine both animations */
+      }
+    </style>
+  </head>
+  <body>
+    <svg width="700" height="500"></svg>
+    <button id="zoomOutButton">Zoom Out</button>
+    <script>
+      // Load the data
+      d3.json("data.json").then(function (graph) {
+        // Create the SVG container
+        var svg = d3.select("svg"),
+          width = +svg.attr("width"),
+          height = +svg.attr("height");
+
+        // Create a container for the visualization
+        var container = svg.append("g");
+        var isZoomedIn = false;
+
+        // Create a color scale with CSS classes
+        function getColor(category) {
+          if (category === "Central") return "central";
+          if (category === "Domain") return "domain";
+          if (category === "Model") return "model";
+        }
+
+        // Fit graph to screen initially
+        function fitGraph() {
+          var bounds = container.node().getBBox();
+          var fullWidth = bounds.width;
+          var fullHeight = bounds.height;
+          var midX = bounds.x + fullWidth / 2;
+          var midY = bounds.y + fullHeight / 2;
+
+          var scale = 0.85 / Math.max(fullWidth / width, fullHeight / height);
+          var translate = [width / 2 - scale * midX, height / 2 - scale * midY];
+
+          svg
+            .transition()
+            .duration(750)
+            .call(
+              zoom.transform,
+              d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale)
+            );
+        
+          isZoomedIn = false;
+        }
+        function zoomToNode(node) {
+          var scale = 2; // Zoom level
+          var translate = [
+            width / 2 - scale * node.x,
+            height / 2 - scale * node.y,
+          ];
+
+          svg
+            .transition()
+            .duration(750)
+            .call(
+              zoom.transform,
+              d3.zoomIdentity.translate(translate[0], translate[1]).scale(scale)
+            );
+          isZoomedIn = true;
+        }
+
+        function initialZoom() {
+          var llmsNode = graph.nodes.find((n) => n.label === "LLMs");
+          if (llmsNode) {
+            zoomToNode(llmsNode); // Use zoomToNode function here
+          }
+          // Highlight the node label
+          label
+            .filter((d) => d.id === llmsNode.id)
+            .attr("class", "label highlight");
+        }
+
+        // Create simulation with forces
+        var simulation = d3
+          .forceSimulation(graph.nodes)
+          .force(
+            "link",
+            d3
+              .forceLink(graph.edges)
+              .id(function (d) {
+                return d.id;
+              })
+              .distance(100)
+          )
+          .force("charge", d3.forceManyBody().strength(-300))
+          .force("center", d3.forceCenter(width / 2, height / 2))
+          .force("collision", d3.forceCollide().radius(50)) // Add collision force
+          .on("tick", function () {
+            link
+              .attr("x1", function (d) {
+                return d.source.x;
+              })
+              .attr("y1", function (d) {
+                return d.source.y;
+              })
+              .attr("x2", function (d) {
+                return d.target.x;
+              })
+              .attr("y2", function (d) {
+                return d.target.y;
+              });
+
+            node
+              .attr("cx", function (d) {
+                return d.x;
+              })
+              .attr("cy", function (d) {
+                return d.y;
+              });
+
+            label
+              .attr("x", function (d) {
+                return d.x;
+              })
+              .attr("y", function (d) {
+                return d.y;
+              });
+          })
+          .on("end", function () {
+            fitGraph(); // Ensure graph is fit initially
+            setTimeout(80, initialZoom);
+          });
+
+        // Draw the links
+        var link = container
+          .append("g")
+          .attr("class", "links")
+          .selectAll("line")
+          .data(graph.edges)
+          .enter()
+          .append("line")
+          .attr("class", "link");
+
+        // Draw the nodes
+        var node = container
+          .append("g")
+          .attr("class", "nodes")
+          .selectAll("circle")
+          .data(graph.nodes)
+          .enter()
+          .append("circle")
+          .attr("class", function (d) {
+            return "node " + getColor(d.category);
+          })
+          .attr("r", 15)
+          .call(
+            d3
+              .drag()
+              .on("start", dragstarted)
+              .on("drag", dragged)
+              .on("end", dragended)
+          )
+          .on("dblclick", function (event, d) {
+            console.log("dblclick event detected");
+            if (isZoomedIn) {
+              fitGraph();
+              isZoomedIn = false;
+            } else {
+              zoomToNode(d);
+            }
+            console.log(isZoomedIn);
+          });
+
+        // Add labels
+        var label = container
+          .append("g")
+          .attr("class", "labels")
+          .selectAll("text")
+          .data(graph.nodes)
+          .enter()
+          .append("text")
+          .attr("class", "label")
+          .attr("dy", -3)
+          .attr("dx", 12)
+          .text(function (d) {
+            return d.label;
+          });
+
+        // Drag functions
+        function dragstarted(event, d) {
+          if (!event.active) simulation.alphaTarget(0.3).restart();
+          d.fx = d.x;
+          d.fy = d.y;
+        }
+
+        function dragged(event, d) {
+          d.fx = event.x;
+          d.fy = event.y;
+        }
+
+        function dragended(event, d) {
+          if (!event.active) simulation.alphaTarget(0);
+          d.fx = null;
+          d.fy = null;
+        }
+
+        // Zoom behavior
+        var zoom = d3
+          .zoom()
+          .scaleExtent([0.5, 4])
+          .on("zoom", function (event) {
+            container.attr("transform", event.transform);
+          });
+
+        // Apply zoom behavior to the SVG
+        svg.call(initialZoom);
+
+        // Add zoom out button functionality
+        d3.select("#zoomOutButton").on("click", fitGraph);
+      });
+    </script>
+  </body>
+</html>
